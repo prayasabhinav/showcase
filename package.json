@@ -1,0 +1,29 @@
+{
+  "name": "ixd-project-showcase",
+  "version": "1.0.0",
+  "description": "Project & idea showcase for the IxD department at Anant",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js",
+    "build": "echo 'No build step required - ready for deployment'",
+    "create-tarball": "tar -czf ixd-showcase.tar.gz --exclude='node_modules' --exclude='.git' --exclude='.env' --exclude='*.tar.gz' .",
+    "create-tar": "tar -cf ixd-showcase.tar --exclude='node_modules' --exclude='.git' --exclude='.env' --exclude='*.tar*' .",
+    "deploy": "sh deploy.sh"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "passport": "^0.6.0",
+    "passport-google-oauth20": "^2.0.0",
+    "mongoose": "^7.5.0",
+    "dotenv": "^16.3.1",
+    "connect-mongo": "^5.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

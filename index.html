@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project & idea showcase for the IxD department at Anant</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Project & idea showcase for the IxD department at Anant</h1>
+        <div id="auth-section">
+            <!-- Login button or user info will appear here -->
+            <a href="/auth/google" id="login-btn" class="btn">Login with Google</a>
+            <div id="user-info" class="hidden">
+                <span id="user-name"></span>
+                <a href="/auth/logout" class="btn">Logout</a>
+            </div>
+        </div>
+    </header>
+
+    <main id="content-area" class="hidden">
+        <section id="showcase-section">
+            <div class="showcase-header">
+                <h2>Projects & Ideas</h2>
+                <button id="add-item-btn" class="btn">+ Add Project/Idea</button>
+            </div>
+            <div class="filter-controls">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="project">Projects</button>
+                <button class="filter-btn" data-filter="idea">Ideas</button>
+            </div>
+            <div id="items-container">
+                <!-- Projects and ideas will be displayed here -->
+            </div>
+        </section>
+        
+        <div id="admin-controls" class="hidden">
+            <button id="delete-all-btn" class="btn btn-danger">Delete All Posts</button>
+        </div>
+    </main>
+
+    <!-- Overlay form for submission -->
+    <div id="submission-overlay" class="overlay hidden">
+        <div class="overlay-content">
+            <div class="overlay-header">
+                <h2>Submit Your Project or Idea</h2>
+                <button id="close-overlay" class="close-btn">&times;</button>
+            </div>
+            <form id="submission-form">
+                <div class="form-group">
+                    <label for="type">Type:</label>
+                    <select id="type" name="type" required>
+                        <option value="">-- Select Type --</option>
+                        <option value="project">Project</option>
+                        <option value="idea">Idea</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="title-group">
+                    <label for="title">Title:</label>
+                    <input type="text" id="title" name="title" required>
+                </div>
+                
+                <div class="form-group hidden" id="description-group">
+                    <label for="description">Description:</label>
+                    <textarea id="description" name="description" rows="5" required></textarea>
+                </div>
+                
+                <div class="form-group" id="url-group">
+                    <label for="url">URL:</label>
+                    <input type="url" id="url" name="url">
+                </div>
+                
+                <div class="form-group">
+                    <label for="keywords">Keywords (comma separated):</label>
+                    <input type="text" id="keywords" name="keywords" required>
+                </div>
+                
+                <button type="submit" class="btn">Submit</button>
+            </form>
+        </div>
+    </div>
+
+    <template id="item-template">
+        <div class="item-card">
+            <h3 class="item-title"></h3>
+            <p class="item-url"><a href="" target="_blank">View Project</a></p>
+            <div class="item-keywords"></div>
+            <div class="item-actions">
+                <div class="votes-display">
+                    <span class="upvote-count">0</span> Upvotes
+                </div>
+                <button class="upvote-btn">Upvote</button>
+            </div>
+        </div>
+    </template>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

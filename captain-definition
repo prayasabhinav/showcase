@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "dockerfilePath": "./Dockerfile",
+  "containerHttpPort": "80",
+  "containerHttpPortScheme": "http",
+  "forceSsl": true,
+  "healthCheck": {
+    "gracePeriod": 30,
+    "interval": 10,
+    "timeout": 5,
+    "retries": 3,
+    "path": "/health"
+  }
+} 
