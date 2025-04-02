@@ -40,6 +40,23 @@
         </div>
     </main>
 
+    <footer id="user-stats" class="hidden">
+        <div class="stats-container">
+            <div class="stat-item">
+                <span class="stat-label">Projects posted this month:</span>
+                <span class="stat-value" id="month-projects">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Ideas posted this week:</span>
+                <span class="stat-value" id="week-ideas">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Streak points:</span>
+                <span class="stat-value" id="streak-points">0</span>
+            </div>
+        </div>
+    </footer>
+
     <!-- Overlay form for submission -->
     <div id="submission-overlay" class="overlay hidden">
         <div class="overlay-content">
@@ -82,17 +99,26 @@
         </div>
     </div>
 
+    <!-- Template for items -->
     <template id="item-template">
-        <div class="item-card">
-            <h3 class="item-title"></h3>
-            <p class="item-url"><a href="" target="_blank">View Project</a></p>
-            <div class="item-keywords"></div>
-            <div class="item-actions">
-                <div class="votes-display">
-                    <span class="upvote-count">0</span> Upvotes
+        <div class="item-wrapper">
+            <div class="item-card">
+                <div class="item-header">
+                    <h3 class="item-title"></h3>
+                    <div class="item-keywords"></div>
                 </div>
-                <button class="upvote-btn">Upvote</button>
+                <div class="item-url">
+                    <a href="#" target="_blank"></a>
+                </div>
+                <div class="item-actions">
+                    <div class="votes-display">
+                        <span class="upvote-count">0</span> upvotes
+                        <button class="upvote-btn">Upvote</button>
+                    </div>
+                </div>
+                <div class="item-author"></div>
             </div>
+            <a href="#" class="delete-link">Delete</a>
         </div>
     </template>
 

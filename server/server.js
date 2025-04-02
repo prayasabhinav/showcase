@@ -50,7 +50,21 @@ const User = mongoose.model('User', new mongoose.Schema({
     googleId: String,
     name: String,
     email: String,
-    profilePicture: String
+    profilePicture: String,
+    streakPoints: {
+        type: Number,
+        default: 0
+    },
+    contributions: {
+        projects: [{
+            date: Date,
+            count: Number
+        }],
+        ideas: [{
+            date: Date,
+            count: Number
+        }]
+    }
 }));
 
 const Item = mongoose.model('Item', new mongoose.Schema({
@@ -203,6 +217,7 @@ app.get('/api/user', (req, res) => {
         res.json({
             authenticated: true,
             user: {
+                _id: req.user._id,
                 name: req.user.name,
                 email: req.user.email,
                 profilePicture: req.user.profilePicture
@@ -216,7 +231,9 @@ app.get('/api/user', (req, res) => {
 // Get all items
 app.get('/api/items', isAuthenticated, async (req, res) => {
     try {
-        const items = await Item.find().sort({ upvotes: -1 });
+        const items = await Item.find()
+            .populate('createdBy', 'name')  // Populate only the name field
+            .sort({ upvotes: -1 });
         res.json(items);
     } catch (err) {
         console.error('Error fetching items:', err);
@@ -224,24 +241,130 @@ app.get('/api/items', isAuthenticated, async (req, res) => {
     }
 });
 
-// Create a new item
+// Helper function to check and update streaks
+async function checkAndUpdateStreaks(userId) {
+    const user = await User.findById(userId);
+    if (!user) return;
+
+    const now = new Date();
+    const oneMonthAgo = new Date(now.setMonth(now.getMonth() - 1));
+    const oneWeekAgo = new Date(now.setDate(now.getDate() - 7));
+
+    // Check project contributions
+    const recentProjects = user.contributions.projects.filter(p => p.date >= oneMonthAgo);
+    const projectStreak = recentProjects.length >= 3 && 
+        recentProjects.every(p => p.count >= 1);
+
+    // Check idea contributions
+    const recentIdeas = user.contributions.ideas.filter(i => i.date >= oneWeekAgo);
+    const ideaStreak = recentIdeas.length >= 3 && 
+        recentIdeas.every(i => i.count >= 1);
+
+    // Update streak points if both conditions are met
+    if (projectStreak && ideaStreak) {
+        user.streakPoints += 1;
+        await user.save();
+    }
+}
+
+// Update the POST /api/items endpoint
 app.post('/api/items', isAuthenticated, async (req, res) => {
     try {
+        console.log('Received item submission:', req.body);
         const { type, title, url, keywords } = req.body;
         
+        // Validate required fields
+        if (!type || !title) {
+            console.error('Missing required fields:', { type, title });
+            return res.status(400).json({ error: 'Type and title are required' });
+        }
+
+        // Validate type
+        if (!['project', 'idea'].includes(type)) {
+            console.error('Invalid type:', type);
+            return res.status(400).json({ error: 'Invalid type. Must be either "project" or "idea"' });
+        }
+
+        // Validate keywords
+        if (!Array.isArray(keywords) || keywords.length === 0) {
+            console.error('Invalid keywords:', keywords);
+            return res.status(400).json({ error: 'At least one keyword is required' });
+        }
+
+        console.log('Creating new item for user:', req.user._id);
+        
+        // Create and save the new item
         const newItem = new Item({
             type,
             title,
-            url,
+            url: url || '',
             keywords,
             createdBy: req.user._id
         });
         
+        console.log('Saving new item:', newItem);
         await newItem.save();
-        res.status(201).json(newItem);
+        console.log('Item saved successfully');
+
+        // Update user's contribution count
+        const now = new Date();
+        const user = await User.findById(req.user._id);
+        console.log('Found user:', user._id);
+        
+        if (type === 'project') {
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const existingMonth = user.contributions.projects.find(p => 
+                p.date.getMonth() === monthStart.getMonth() && 
+                p.date.getFullYear() === monthStart.getFullYear()
+            );
+            
+            if (existingMonth) {
+                existingMonth.count += 1;
+            } else {
+                user.contributions.projects.push({
+                    date: monthStart,
+                    count: 1
+                });
+            }
+        } else {
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - now.getDay());
+            console.log('Week start:', weekStart);
+            
+            const existingWeek = user.contributions.ideas.find(i => 
+                i.date.getTime() === weekStart.getTime()
+            );
+            
+            if (existingWeek) {
+                existingWeek.count += 1;
+            } else {
+                user.contributions.ideas.push({
+                    date: weekStart,
+                    count: 1
+                });
+            }
+        }
+        
+        console.log('Updating user contributions');
+        await user.save();
+        console.log('User contributions updated');
+        
+        // Check and update streaks
+        await checkAndUpdateStreaks(req.user._id);
+        
+        // Return the new item with populated creator
+        const populatedItem = await Item.findById(newItem._id)
+            .populate('createdBy', 'name');
+            
+        console.log('Sending response with populated item');
+        res.status(201).json(populatedItem);
     } catch (err) {
         console.error('Error creating item:', err);
-        res.status(400).json({ error: err.message });
+        console.error('Error stack:', err.stack);
+        res.status(500).json({ 
+            error: 'Failed to create item. Please try again.',
+            details: err.message
+        });
     }
 });
 
@@ -264,15 +387,220 @@ app.post('/api/items/:id/upvote', isAuthenticated, async (req, res) => {
     }
 });
 
+// Delete an item (admin or owner only)
+app.delete('/api/items/:id', isAuthenticated, async (req, res) => {
+    try {
+        const item = await Item.findById(req.params.id);
+        
+        if (!item) {
+            return res.status(404).json({ error: 'Item not found' });
+        }
+
+        // Check if user is admin or the owner of the item
+        if (req.user.email !== 'prayas.abhinav@anu.edu.in' && item.createdBy.toString() !== req.user._id.toString()) {
+            console.log('Delete permission denied:', {
+                userEmail: req.user.email,
+                itemCreator: item.createdBy,
+                isAdmin: req.user.email === 'prayas.abhinav@anu.edu.in'
+            });
+            return res.status(403).json({ error: 'You can only delete your own posts' });
+        }
+
+        // Update user's contribution count
+        const user = await User.findById(item.createdBy);
+        if (user) {
+            const now = new Date();
+            if (item.type === 'project') {
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                // Find the current month's project count
+                const monthIndex = user.contributions.projects.findIndex(p => 
+                    p.date.getMonth() === monthStart.getMonth() && 
+                    p.date.getFullYear() === monthStart.getFullYear()
+                );
+                
+                if (monthIndex !== -1) {
+                    user.contributions.projects[monthIndex].count = Math.max(0, user.contributions.projects[monthIndex].count - 1);
+                    if (user.contributions.projects[monthIndex].count === 0) {
+                        user.contributions.projects.splice(monthIndex, 1);
+                    }
+                }
+            } else {
+                const weekStart = new Date(now);
+                weekStart.setDate(now.getDate() - now.getDay());
+                // Find the current week's idea count
+                const weekIndex = user.contributions.ideas.findIndex(i => 
+                    i.date.getTime() === weekStart.getTime()
+                );
+                
+                if (weekIndex !== -1) {
+                    user.contributions.ideas[weekIndex].count = Math.max(0, user.contributions.ideas[weekIndex].count - 1);
+                    if (user.contributions.ideas[weekIndex].count === 0) {
+                        user.contributions.ideas.splice(weekIndex, 1);
+                    }
+                }
+            }
+            await user.save();
+        }
+        
+        await item.deleteOne();
+        console.log(`Item ${req.params.id} deleted by ${req.user.email}`);
+        res.status(200).json({ message: 'Item deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting item:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // Delete all items (admin only)
 app.delete('/api/items/delete-all', isAdmin, async (req, res) => {
     try {
+        // Get all items before deleting to update user stats
+        const items = await Item.find({});
+        
+        // Reset all users' contribution counts
+        await User.updateMany({}, {
+            $set: {
+                'contributions.projects': [],
+                'contributions.ideas': []
+            }
+        });
+        
+        // Delete all items
         await Item.deleteMany({});
         console.log('All items deleted by admin');
         res.status(200).json({ message: 'All items deleted successfully' });
     } catch (err) {
         console.error('Error deleting all items:', err);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Add new endpoint to get user's contribution stats
+app.get('/api/user/stats', isAuthenticated, async (req, res) => {
+    try {
+        // Check MongoDB connection
+        if (mongoose.connection.readyState !== 1) {
+            console.error('MongoDB is not connected');
+            return res.status(503).json({ error: 'Database connection error' });
+        }
+
+        console.log('\n=== Starting User Stats Calculation ===');
+        console.log('Fetching stats for user:', req.user._id);
+        
+        // Ensure user._id is valid
+        if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
+            console.error('Invalid user ID:', req.user._id);
+            return res.status(400).json({ error: 'Invalid user ID' });
+        }
+
+        const user = await User.findById(req.user._id);
+        
+        if (!user) {
+            console.error('User not found:', req.user._id);
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Initialize contributions if they don't exist
+        if (!user.contributions) {
+            console.log('Initializing empty contributions for user');
+            user.contributions = {
+                projects: [],
+                ideas: []
+            };
+            await user.save();
+        }
+        
+        console.log('\nUser Details:');
+        console.log('ID:', user._id);
+        console.log('Name:', user.name);
+        console.log('Raw Contributions:', JSON.stringify(user.contributions, null, 2));
+        
+        const now = new Date();
+        console.log('\nCurrent time:', now.toISOString());
+        
+        // Get current month's project count
+        const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        console.log('Current month start:', currentMonth.toISOString());
+        
+        console.log('\nChecking Project Contributions:');
+        console.log('Total projects entries:', user.contributions.projects.length);
+        
+        // Find the current month's project count
+        const monthProjects = user.contributions.projects.find(p => {
+            if (!p.date) {
+                console.log('Found project entry with no date:', p);
+                return false;
+            }
+            const projectDate = new Date(p.date);
+            console.log('Checking project entry:', {
+                date: projectDate.toISOString(),
+                count: p.count,
+                matchesCurrentMonth: projectDate.getMonth() === currentMonth.getMonth(),
+                matchesCurrentYear: projectDate.getFullYear() === currentMonth.getFullYear()
+            });
+            return projectDate.getMonth() === currentMonth.getMonth() && 
+                   projectDate.getFullYear() === currentMonth.getFullYear();
+        });
+        
+        console.log('\nFound month projects:', monthProjects ? {
+            date: monthProjects.date.toISOString(),
+            count: monthProjects.count
+        } : 'None');
+        
+        // Get current week's idea count
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay()); // Start of current week
+        console.log('\nCurrent week start:', weekStart.toISOString());
+        
+        // Find the current week's idea count
+        const weekIdeas = user.contributions.ideas.find(i => {
+            if (!i.date) {
+                console.log('Found idea entry with no date:', i);
+                return false;
+            }
+            const ideaDate = new Date(i.date);
+            console.log('Checking idea entry:', {
+                date: ideaDate.toISOString(),
+                count: i.count,
+                isInCurrentWeek: ideaDate >= weekStart && ideaDate < new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
+            });
+            return ideaDate >= weekStart && ideaDate < new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+        });
+        
+        console.log('\nFound week ideas:', weekIdeas ? {
+            date: weekIdeas.date.toISOString(),
+            count: weekIdeas.count
+        } : 'None');
+        
+        // Verify the actual number of projects in the database
+        const actualProjectCount = await Item.countDocuments({
+            type: 'project',
+            createdBy: user._id,
+            createdAt: {
+                $gte: currentMonth,
+                $lt: new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)
+            }
+        });
+        
+        console.log('\nActual project count from database:', actualProjectCount);
+        
+        const stats = {
+            streakPoints: user.streakPoints || 0,
+            currentMonthProjects: actualProjectCount, // Use actual count from database
+            currentWeekIdeas: weekIdeas ? weekIdeas.count : 0
+        };
+        
+        console.log('\nFinal Stats:', stats);
+        console.log('=== End User Stats Calculation ===\n');
+        
+        res.json(stats);
+    } catch (err) {
+        console.error('Error fetching user stats:', err);
+        console.error('Error stack:', err.stack);
+        res.status(500).json({ 
+            error: 'Failed to fetch user stats',
+            details: err.message
+        });
     }
 });
 

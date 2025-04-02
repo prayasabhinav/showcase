@@ -105,6 +105,7 @@ function fetchUserStatus() {
                 document.getElementById('user-info').classList.remove('hidden');
                 document.getElementById('user-name').textContent = data.user.name;
                 document.getElementById('content-area').classList.remove('hidden');
+                document.getElementById('user-stats').classList.remove('hidden');
                 
                 // Show admin controls if the user is prayas.abhinav@anu.edu.in
                 const adminControls = document.getElementById('admin-controls');
@@ -114,16 +115,109 @@ function fetchUserStatus() {
                     adminControls.classList.add('hidden');
                 }
                 
-                // Load items
+                // Load items and user stats
                 fetchItems();
+                fetchUserStats();
             } else {
                 // User is not logged in
                 document.getElementById('login-btn').classList.remove('hidden');
                 document.getElementById('user-info').classList.add('hidden');
                 document.getElementById('content-area').classList.add('hidden');
+                document.getElementById('user-stats').classList.add('hidden');
             }
         })
         .catch(error => console.error('Error fetching user status:', error));
+}
+
+// Fetch user stats
+function fetchUserStats() {
+    console.log('\n=== Starting User Stats Fetch ===');
+    console.log('Fetching user stats from server...');
+    
+    fetch('/api/user/stats')
+        .then(response => {
+            console.log('Stats response status:', response.status);
+            if (!response.ok) {
+                return response.json().then(err => {
+                    console.error('Stats error response:', err);
+                    throw new Error(err.error || 'Failed to fetch user stats');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('\nReceived raw stats data:', data);
+            if (!data) {
+                throw new Error('No data received from server');
+            }
+            
+            // Update the UI with the stats
+            const monthProjectsElement = document.getElementById('month-projects');
+            const weekIdeasElement = document.getElementById('week-ideas');
+            const streakPointsElement = document.getElementById('streak-points');
+            
+            if (monthProjectsElement) {
+                // Parse the value as a number and ensure it's not undefined or null
+                const monthProjects = parseInt(data.currentMonthProjects) || 0;
+                console.log('\nProcessing month projects:');
+                console.log('Raw value:', data.currentMonthProjects);
+                console.log('Parsed value:', monthProjects);
+                console.log('Setting element text to:', monthProjects);
+                monthProjectsElement.textContent = monthProjects;
+                monthProjectsElement.style.display = 'block';
+            }
+            
+            if (weekIdeasElement) {
+                // Parse the value as a number and ensure it's not undefined or null
+                const weekIdeas = parseInt(data.currentWeekIdeas) || 0;
+                console.log('\nProcessing week ideas:');
+                console.log('Raw value:', data.currentWeekIdeas);
+                console.log('Parsed value:', weekIdeas);
+                console.log('Setting element text to:', weekIdeas);
+                weekIdeasElement.textContent = weekIdeas;
+                weekIdeasElement.style.display = 'block';
+            }
+            
+            if (streakPointsElement) {
+                // Parse the value as a number and ensure it's not undefined or null
+                const streakPoints = parseInt(data.streakPoints) || 0;
+                console.log('\nProcessing streak points:');
+                console.log('Raw value:', data.streakPoints);
+                console.log('Parsed value:', streakPoints);
+                console.log('Setting element text to:', streakPoints);
+                streakPointsElement.textContent = streakPoints;
+                streakPointsElement.style.display = 'block';
+            }
+            
+            console.log('\n=== End User Stats Fetch ===\n');
+        })
+        .catch(error => {
+            console.error('\nError fetching user stats:', error);
+            // Set all values to 0 in case of error
+            const monthProjectsElement = document.getElementById('month-projects');
+            const weekIdeasElement = document.getElementById('week-ideas');
+            const streakPointsElement = document.getElementById('streak-points');
+            
+            if (monthProjectsElement) {
+                console.log('Setting month projects to 0 due to error');
+                monthProjectsElement.textContent = '0';
+                monthProjectsElement.style.display = 'block';
+            }
+            
+            if (weekIdeasElement) {
+                console.log('Setting week ideas to 0 due to error');
+                weekIdeasElement.textContent = '0';
+                weekIdeasElement.style.display = 'block';
+            }
+            
+            if (streakPointsElement) {
+                console.log('Setting streak points to 0 due to error');
+                streakPointsElement.textContent = '0';
+                streakPointsElement.style.display = 'block';
+            }
+            
+            console.log('\n=== End User Stats Fetch (Error Case) ===\n');
+        });
 }
 
 // Submit a new item (project or idea)
@@ -140,12 +234,33 @@ function submitItem() {
         title = formData.get('description');
     }
     
+    console.log('Submitting item:', { type, title });
+    
+    // Validate required fields
+    if (!title || !type) {
+        alert('Please fill in all required fields');
+        return;
+    }
+
+    // Clean up keywords
+    const keywords = formData.get('keywords')
+        .split(',')
+        .map(keyword => keyword.trim())
+        .filter(keyword => keyword.length > 0);
+
+    if (keywords.length === 0) {
+        alert('Please add at least one keyword');
+        return;
+    }
+    
     const itemData = {
         type: type,
         title: title,
-        url: formData.get('url'),
-        keywords: formData.get('keywords').split(',').map(keyword => keyword.trim())
+        url: formData.get('url') || '',
+        keywords: keywords
     };
+    
+    console.log('Sending item data:', itemData);
     
     fetch('/api/items', {
         method: 'POST',
@@ -155,22 +270,33 @@ function submitItem() {
         body: JSON.stringify(itemData)
     })
     .then(response => {
-        if (response.ok) {
-            form.reset();
-            // Reset the form display
-            titleGroup.classList.remove('hidden');
-            descriptionGroup.classList.add('hidden');
-            // Close the overlay
-            document.getElementById('submission-overlay').classList.add('hidden');
-            fetchItems(); // Refresh the list
-            alert('Your submission was successful!');
-        } else {
-            alert('Failed to submit. Please try again.');
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            return response.json().then(err => {
+                console.error('Server error:', err);
+                throw new Error(err.error || 'Failed to create item');
+            });
         }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Item created successfully:', data);
+        form.reset();
+        // Reset the form display
+        const titleGroup = document.getElementById('title-group');
+        const descriptionGroup = document.getElementById('description-group');
+        titleGroup.classList.remove('hidden');
+        descriptionGroup.classList.add('hidden');
+        // Close the overlay
+        document.getElementById('submission-overlay').classList.add('hidden');
+        // Refresh items and user stats
+        fetchItems();
+        fetchUserStats();
+        alert('Your submission was successful!');
     })
     .catch(error => {
         console.error('Error submitting item:', error);
-        alert('An error occurred. Please try again.');
+        alert(error.message || 'An error occurred. Please try again.');
     });
 }
 
@@ -198,6 +324,7 @@ function displayItems(items) {
     items.forEach(item => {
         // Clone template
         const itemElement = template.content.cloneNode(true);
+        const wrapper = itemElement.querySelector('.item-wrapper');
         const card = itemElement.querySelector('.item-card');
         
         // Set data type attribute for styling and filtering
@@ -206,23 +333,24 @@ function displayItems(items) {
         // Fill in content
         card.querySelector('.item-title').textContent = item.title;
         
+        // Add author name
+        const authorElement = card.querySelector('.item-author');
+        if (item.createdBy && item.createdBy.name) {
+            authorElement.textContent = `Posted by: ${item.createdBy.name}`;
+            authorElement.style.display = 'block';
+        } else {
+            authorElement.style.display = 'none';
+        }
+        
         // Handle URL display
         const urlElement = card.querySelector('.item-url');
         if (item.url) {
             urlElement.querySelector('a').href = item.url;
             urlElement.querySelector('a').textContent = item.type === 'project' ? 'View Project' : 'Reference Link';
+            urlElement.style.display = 'block';
         } else {
             urlElement.style.display = 'none';
         }
-        
-        // Add keywords
-        const keywordsContainer = card.querySelector('.item-keywords');
-        item.keywords.forEach(keyword => {
-            const keywordSpan = document.createElement('span');
-            keywordSpan.className = 'keyword';
-            keywordSpan.textContent = keyword;
-            keywordsContainer.appendChild(keywordSpan);
-        });
         
         // Set upvote count
         card.querySelector('.upvote-count').textContent = item.upvotes;
@@ -230,6 +358,50 @@ function displayItems(items) {
         // Add upvote functionality
         card.querySelector('.upvote-btn').addEventListener('click', function() {
             upvoteItem(item._id, card);
+        });
+        
+        // Add keywords at the bottom
+        const keywordsContainer = card.querySelector('.item-keywords');
+        keywordsContainer.innerHTML = ''; // Clear existing keywords
+        item.keywords.forEach(keyword => {
+            const keywordSpan = document.createElement('span');
+            keywordSpan.className = 'keyword';
+            keywordSpan.textContent = keyword;
+            keywordsContainer.appendChild(keywordSpan);
+        });
+        
+        // Add delete link for admin or item owner
+        const deleteLink = wrapper.querySelector('.delete-link');
+        deleteLink.style.display = 'none'; // Hidden by default
+        
+        // Check if user is admin or the owner of the item
+        fetch('/api/user')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Checking delete permissions:', {
+                    isAuthenticated: data.authenticated,
+                    userEmail: data.user?.email,
+                    isAdmin: data.user?.email === 'prayas.abhinav@anu.edu.in',
+                    itemCreatorId: item.createdBy?._id,
+                    currentUserId: data.user?._id
+                });
+                
+                if (data.authenticated) {
+                    if (data.user.email === 'prayas.abhinav@anu.edu.in' || 
+                        (item.createdBy && item.createdBy._id === data.user._id)) {
+                        console.log('Showing delete button for item:', item._id);
+                        deleteLink.style.display = 'block';
+                    } else {
+                        console.log('Hiding delete button for item:', item._id);
+                    }
+                }
+            });
+        
+        deleteLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to delete this item?')) {
+                deleteItem(item._id, wrapper);
+            }
         });
         
         // Add item to container
@@ -281,13 +453,42 @@ function deleteAllItems() {
     .then(response => {
         if (response.ok) {
             fetchItems(); // Refresh the list (should be empty now)
+            // Add a small delay before refreshing user stats to ensure server has processed the deletion
+            setTimeout(() => {
+                fetchUserStats();
+            }, 500);
             alert('All posts have been deleted successfully.');
         } else {
-            alert('Failed to delete all posts. Please try again.');
+            return response.json().then(err => {
+                throw new Error(err.error || 'Failed to delete all posts');
+            });
         }
     })
     .catch(error => {
         console.error('Error deleting all items:', error);
-        alert('An error occurred. Please try again.');
+        alert(error.message || 'An error occurred. Please try again.');
+    });
+}
+
+// Delete an item
+function deleteItem(itemId, wrapper) {
+    fetch(`/api/items/${itemId}`, {
+        method: 'DELETE'
+    })
+    .then(response => {
+        if (response.ok) {
+            // Remove the card from the UI
+            wrapper.remove();
+            // Refresh user stats
+            fetchUserStats();
+        } else {
+            return response.json().then(err => {
+                throw new Error(err.error || 'Failed to delete item');
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting item:', error);
+        alert(error.message || 'Failed to delete item. Please try again.');
     });
 }
