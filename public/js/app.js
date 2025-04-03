@@ -82,16 +82,6 @@ document.addEventListener('DOMContentLoaded', function() {
             submissionOverlay.classList.add('hidden');
         }
     });
-
-    // Handle delete all button
-    const deleteAllBtn = document.getElementById('delete-all-btn');
-    if (deleteAllBtn) {
-        deleteAllBtn.addEventListener('click', function() {
-            if (confirm('Are you sure you want to delete ALL posts? This action cannot be undone.')) {
-                deleteAllItems();
-            }
-        });
-    }
 });
 
 // Fetch user login status
@@ -220,7 +210,7 @@ function fetchUserStats() {
         });
 }
 
-// Submit a new item
+// Submit a new item (project or idea)
 function submitItem() {
     const form = document.getElementById('submission-form');
     const formData = new FormData(form);
@@ -234,33 +224,30 @@ function submitItem() {
         title = formData.get('description');
     }
     
-    const url = formData.get('url');
-    const keywords = formData.get('keywords').split(',').map(k => k.trim()).filter(k => k);
-    
-    console.log('\n=== Starting Item Submission ===');
-    console.log('Form data:', {
-        type,
-        title,
-        url,
-        keywords
-    });
+    console.log('Submitting item:', { type, title });
     
     // Validate required fields
-    if (!type || !title || keywords.length === 0) {
-        console.error('Validation failed:', {
-            type: !!type,
-            title: !!title,
-            keywords: keywords.length
-        });
+    if (!title || !type) {
         alert('Please fill in all required fields');
+        return;
+    }
+
+    // Clean up keywords
+    const keywords = formData.get('keywords')
+        .split(',')
+        .map(keyword => keyword.trim())
+        .filter(keyword => keyword.length > 0);
+
+    if (keywords.length === 0) {
+        alert('Please add at least one keyword');
         return;
     }
     
     const itemData = {
-        type,
-        title,
-        url: url || '',
-        keywords
+        type: type,
+        title: title,
+        url: formData.get('url') || '',
+        keywords: keywords
     };
     
     console.log('Sending item data:', itemData);
@@ -270,29 +257,20 @@ function submitItem() {
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(itemData),
-        credentials: 'include'
+        body: JSON.stringify(itemData)
     })
     .then(response => {
         console.log('Response status:', response.status);
-        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-        
         if (!response.ok) {
             return response.json().then(err => {
                 console.error('Server error:', err);
-                console.error('Error details:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    error: err
-                });
-                throw new Error(err.details || err.error || 'Failed to create item');
+                throw new Error(err.error || 'Failed to create item');
             });
         }
         return response.json();
     })
     .then(data => {
         console.log('Item created successfully:', data);
-        // Reset the form
         form.reset();
         // Reset the form display
         const titleGroup = document.getElementById('title-group');
@@ -308,15 +286,7 @@ function submitItem() {
     })
     .catch(error => {
         console.error('Error submitting item:', error);
-        console.error('Error details:', {
-            message: error.message,
-            stack: error.stack,
-            name: error.name
-        });
         alert(error.message || 'An error occurred. Please try again.');
-    })
-    .finally(() => {
-        console.log('=== End Item Submission ===\n');
     });
 }
 
@@ -407,10 +377,15 @@ function displayItems(items) {
                 });
                 
                 if (data.authenticated) {
+                    // Show delete button for admin or item owner
                     if (data.user.email === 'prayas.abhinav@anu.edu.in' || 
                         (item.createdBy && item.createdBy._id === data.user._id)) {
                         console.log('Showing delete button for item:', item._id);
                         deleteLink.style.display = 'block';
+                        // Add admin indicator if user is admin
+                        if (data.user.email === 'prayas.abhinav@anu.edu.in') {
+                            deleteLink.textContent = 'Delete (Admin)';
+                        }
                     } else {
                         console.log('Hiding delete button for item:', item._id);
                     }
@@ -467,89 +442,23 @@ function upvoteItem(itemId, card) {
 
 // Delete an item
 function deleteItem(itemId, wrapper) {
-    console.log('Attempting to delete item:', itemId);
     fetch(`/api/items/${itemId}`, {
-        method: 'DELETE',
-        credentials: 'include' // Important for session-based auth
+        method: 'DELETE'
     })
     .then(response => {
-        console.log('Delete response status:', response.status);
-        if (!response.ok) {
+        if (response.ok) {
+            // Remove the card from the UI
+            wrapper.remove();
+            // Refresh user stats
+            fetchUserStats();
+        } else {
             return response.json().then(err => {
-                console.error('Delete error response:', err);
-                throw new Error(err.details || err.error || 'Failed to delete item');
+                throw new Error(err.error || 'Failed to delete item');
             });
         }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Item deleted successfully:', data);
-        // Remove the card from the UI
-        wrapper.remove();
-        // Refresh user stats
-        fetchUserStats();
-        // Show success message
-        alert('Item deleted successfully');
     })
     .catch(error => {
         console.error('Error deleting item:', error);
-        console.error('Error details:', error.message);
-        alert(`Failed to delete item: ${error.message}`);
-    });
-}
-
-// Delete all items
-function deleteAllItems() {
-    if (!confirm('Are you sure you want to delete ALL items? This action cannot be undone.')) {
-        return;
-    }
-    
-    console.log('\n=== Starting Delete All Items ===');
-    console.log('User attempting to delete all items');
-    
-    fetch('/api/items/delete-all', {
-        method: 'DELETE',
-        credentials: 'include' // Important for session-based auth
-    })
-    .then(response => {
-        console.log('Delete all response status:', response.status);
-        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-        
-        if (!response.ok) {
-            return response.json().then(err => {
-                console.error('Delete all error response:', err);
-                console.error('Error details:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    error: err
-                });
-                throw new Error(err.details || err.error || 'Failed to delete all items');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('All items deleted successfully:', data);
-        // Clear the items container
-        const container = document.getElementById('items-container');
-        if (container) {
-            container.innerHTML = '';
-        }
-        // Refresh user stats
-        fetchUserStats();
-        // Show success message
-        alert('All items have been deleted successfully');
-    })
-    .catch(error => {
-        console.error('Error deleting all items:', error);
-        console.error('Error details:', {
-            message: error.message,
-            stack: error.stack,
-            name: error.name
-        });
-        alert(`Failed to delete all items: ${error.message}`);
-    })
-    .finally(() => {
-        console.log('=== End Delete All Items ===\n');
+        alert(error.message || 'Failed to delete item. Please try again.');
     });
 }
