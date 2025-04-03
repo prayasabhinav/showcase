@@ -101,25 +101,10 @@ const sessionMiddleware = session({
     saveUninitialized: false,
     store: MongoStore.create({ 
         mongoUrl: process.env.MANGODB_URL,
-        touchAfter: 24 * 3600, // Only update the session once per day unless data changes
-        ttl: 24 * 60 * 60 // Session TTL (24 hours)
-    }),
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
+        touchAfter: 24 * 3600 // Only update the session once per day unless data changes
+    })
 });
 app.use(sessionMiddleware);
-
-// Add CORS configuration
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    next();
-});
 
 // Configure Passport.js
 console.log('Configuring Passport.js...');
@@ -226,15 +211,6 @@ const isAdmin = (req, res, next) => {
     res.status(403).json({ error: 'Admin access required' });
 };
 
-// Add MongoDB connection check middleware
-const checkMongoDBConnection = (req, res, next) => {
-    if (mongoose.connection.readyState !== 1) {
-        console.error('MongoDB is not connected');
-        return res.status(503).json({ error: 'Database connection error' });
-    }
-    next();
-};
-
 // API routes
 app.get('/api/user', (req, res) => {
     if (req.isAuthenticated()) {
@@ -291,203 +267,103 @@ async function checkAndUpdateStreaks(userId) {
     }
 }
 
-// Delete all items (admin only)
-app.delete('/api/items/delete-all', isAdmin, checkMongoDBConnection, async (req, res) => {
+// Update the POST /api/items endpoint
+app.post('/api/items', isAuthenticated, async (req, res) => {
     try {
-        console.log('\n=== Starting Delete All Items ===');
-        console.log('User making request:', {
-            email: req.user.email,
-            id: req.user._id,
-            isAdmin: req.user.email === 'prayas.abhinav@anu.edu.in'
-        });
-        
-        // Get all items before deleting to update user stats
-        const items = await Item.find({});
-        console.log('Found items to delete:', {
-            count: items.length,
-            items: items.map(item => ({
-                id: item._id,
-                type: item.type,
-                title: item.title,
-                createdBy: item.createdBy
-            }))
-        });
-        
-        // Reset all users' contribution counts
-        const updateResult = await User.updateMany({}, {
-            $set: {
-                'contributions.projects': [],
-                'contributions.ideas': []
-            }
-        });
-        console.log('User contributions reset:', {
-            matchedCount: updateResult.matchedCount,
-            modifiedCount: updateResult.modifiedCount
-        });
-        
-        // Delete all items
-        const deleteResult = await Item.deleteMany({});
-        console.log('All items deleted:', {
-            deletedCount: deleteResult.deletedCount
-        });
-        
-        console.log('=== End Delete All Items ===\n');
-        res.status(200).json({ 
-            message: 'All items deleted successfully',
-            details: {
-                itemsDeleted: deleteResult.deletedCount,
-                usersUpdated: updateResult.modifiedCount
-            }
-        });
-    } catch (err) {
-        console.error('Error deleting all items:', err);
-        console.error('Error details:', {
-            name: err.name,
-            message: err.message,
-            stack: err.stack,
-            code: err.code
-        });
-        res.status(500).json({ 
-            error: 'Server error',
-            details: err.message,
-            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-        });
-    }
-});
-
-// Create a new item
-app.post('/api/items', isAuthenticated, checkMongoDBConnection, async (req, res) => {
-    try {
-        console.log('\n=== Starting Item Creation ===');
-        console.log('User creating item:', {
-            email: req.user.email,
-            id: req.user._id
-        });
-        console.log('Item data:', req.body);
-        
+        console.log('Received item submission:', req.body);
         const { type, title, url, keywords } = req.body;
         
         // Validate required fields
-        if (!type || !title || !keywords || !Array.isArray(keywords)) {
-            console.log('Validation failed:', { 
-                type: !!type,
-                title: !!title,
-                keywords: keywords ? {
-                    isArray: Array.isArray(keywords),
-                    length: keywords.length
-                } : 'missing'
-            });
-            return res.status(400).json({ 
-                error: 'Missing required fields',
-                details: 'Please provide type, title, and keywords'
-            });
+        if (!type || !title) {
+            console.error('Missing required fields:', { type, title });
+            return res.status(400).json({ error: 'Type and title are required' });
         }
+
+        // Validate type
+        if (!['project', 'idea'].includes(type)) {
+            console.error('Invalid type:', type);
+            return res.status(400).json({ error: 'Invalid type. Must be either "project" or "idea"' });
+        }
+
+        // Validate keywords
+        if (!Array.isArray(keywords) || keywords.length === 0) {
+            console.error('Invalid keywords:', keywords);
+            return res.status(400).json({ error: 'At least one keyword is required' });
+        }
+
+        console.log('Creating new item for user:', req.user._id);
         
-        // Create the item
-        const item = new Item({
+        // Create and save the new item
+        const newItem = new Item({
             type,
             title,
             url: url || '',
             keywords,
-            createdBy: req.user._id,
-            upvotes: 0
+            createdBy: req.user._id
         });
         
-        await item.save();
-        console.log('Item created:', {
-            id: item._id,
-            type: item.type,
-            title: item.title,
-            keywords: item.keywords
-        });
-        
+        console.log('Saving new item:', newItem);
+        await newItem.save();
+        console.log('Item saved successfully');
+
         // Update user's contribution count
+        const now = new Date();
         const user = await User.findById(req.user._id);
-        if (user) {
-            console.log('Updating user contributions for:', user.email);
-            const now = new Date();
+        console.log('Found user:', user._id);
+        
+        if (type === 'project') {
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const existingMonth = user.contributions.projects.find(p => 
+                p.date.getMonth() === monthStart.getMonth() && 
+                p.date.getFullYear() === monthStart.getFullYear()
+            );
             
-            if (type === 'project') {
-                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                const existingMonth = user.contributions.projects.find(p => {
-                    if (!p || !p.date) return false;
-                    const projectDate = new Date(p.date);
-                    return projectDate.getMonth() === monthStart.getMonth() && 
-                           projectDate.getFullYear() === monthStart.getFullYear();
-                });
-                
-                if (existingMonth) {
-                    existingMonth.count += 1;
-                    console.log('Updated existing month contribution:', {
-                        date: existingMonth.date,
-                        newCount: existingMonth.count
-                    });
-                } else {
-                    user.contributions.projects.push({
-                        date: monthStart,
-                        count: 1
-                    });
-                    console.log('Added new month contribution:', {
-                        date: monthStart,
-                        count: 1
-                    });
-                }
+            if (existingMonth) {
+                existingMonth.count += 1;
             } else {
-                const weekStart = new Date(now);
-                weekStart.setDate(now.getDate() - now.getDay());
-                const existingWeek = user.contributions.ideas.find(i => {
-                    if (!i || !i.date) return false;
-                    const ideaDate = new Date(i.date);
-                    return ideaDate.getTime() === weekStart.getTime();
+                user.contributions.projects.push({
+                    date: monthStart,
+                    count: 1
                 });
-                
-                if (existingWeek) {
-                    existingWeek.count += 1;
-                    console.log('Updated existing week contribution:', {
-                        date: existingWeek.date,
-                        newCount: existingWeek.count
-                    });
-                } else {
-                    user.contributions.ideas.push({
-                        date: weekStart,
-                        count: 1
-                    });
-                    console.log('Added new week contribution:', {
-                        date: weekStart,
-                        count: 1
-                    });
-                }
             }
+        } else {
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - now.getDay());
+            console.log('Week start:', weekStart);
             
-            try {
-                await user.save();
-                console.log('User contributions updated successfully');
-            } catch (saveError) {
-                console.error('Error saving user contributions:', saveError);
-                console.error('Error details:', {
-                    name: saveError.name,
-                    message: saveError.message,
-                    stack: saveError.stack,
-                    code: saveError.code
+            const existingWeek = user.contributions.ideas.find(i => 
+                i.date.getTime() === weekStart.getTime()
+            );
+            
+            if (existingWeek) {
+                existingWeek.count += 1;
+            } else {
+                user.contributions.ideas.push({
+                    date: weekStart,
+                    count: 1
                 });
-                // Continue with success response even if contribution update fails
             }
         }
         
-        console.log('=== End Item Creation ===\n');
-        res.status(201).json(item);
+        console.log('Updating user contributions');
+        await user.save();
+        console.log('User contributions updated');
+        
+        // Check and update streaks
+        await checkAndUpdateStreaks(req.user._id);
+        
+        // Return the new item with populated creator
+        const populatedItem = await Item.findById(newItem._id)
+            .populate('createdBy', 'name');
+            
+        console.log('Sending response with populated item');
+        res.status(201).json(populatedItem);
     } catch (err) {
         console.error('Error creating item:', err);
-        console.error('Error details:', {
-            name: err.name,
-            message: err.message,
-            stack: err.stack,
-            code: err.code
-        });
+        console.error('Error stack:', err.stack);
         res.status(500).json({ 
-            error: 'Server error',
-            details: err.message,
-            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+            error: 'Failed to create item. Please try again.',
+            details: err.message
         });
     }
 });
@@ -512,38 +388,13 @@ app.post('/api/items/:id/upvote', isAuthenticated, async (req, res) => {
 });
 
 // Delete an item (admin or owner only)
-app.delete('/api/items/:id', isAuthenticated, checkMongoDBConnection, async (req, res) => {
+app.delete('/api/items/:id', isAuthenticated, async (req, res) => {
     try {
-        console.log('\n=== Starting Item Deletion ===');
-        console.log('Deleting item:', req.params.id);
-        console.log('User making request:', req.user.email);
-        console.log('User ID:', req.user._id);
-        
-        // Validate item ID
-        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-            console.log('Invalid item ID');
-            return res.status(400).json({ 
-                error: 'Invalid item ID',
-                details: 'The provided item ID is not valid'
-            });
-        }
-        
         const item = await Item.findById(req.params.id);
         
         if (!item) {
-            console.log('Item not found');
-            return res.status(404).json({ 
-                error: 'Item not found',
-                details: 'The item you are trying to delete does not exist'
-            });
+            return res.status(404).json({ error: 'Item not found' });
         }
-
-        console.log('Item found:', {
-            id: item._id,
-            type: item.type,
-            createdBy: item.createdBy,
-            title: item.title
-        });
 
         // Check if user is admin or the owner of the item
         if (req.user.email !== 'prayas.abhinav@anu.edu.in' && item.createdBy.toString() !== req.user._id.toString()) {
@@ -552,27 +403,20 @@ app.delete('/api/items/:id', isAuthenticated, checkMongoDBConnection, async (req
                 itemCreator: item.createdBy,
                 isAdmin: req.user.email === 'prayas.abhinav@anu.edu.in'
             });
-            return res.status(403).json({ 
-                error: 'Permission denied',
-                details: 'You can only delete your own posts'
-            });
+            return res.status(403).json({ error: 'You can only delete your own posts' });
         }
 
         // Update user's contribution count
         const user = await User.findById(item.createdBy);
         if (user) {
-            console.log('Updating user contributions for:', user.email);
             const now = new Date();
-            
             if (item.type === 'project') {
                 const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
                 // Find the current month's project count
-                const monthIndex = user.contributions.projects.findIndex(p => {
-                    if (!p || !p.date) return false;
-                    const projectDate = new Date(p.date);
-                    return projectDate.getMonth() === monthStart.getMonth() && 
-                           projectDate.getFullYear() === monthStart.getFullYear();
-                });
+                const monthIndex = user.contributions.projects.findIndex(p => 
+                    p.date.getMonth() === monthStart.getMonth() && 
+                    p.date.getFullYear() === monthStart.getFullYear()
+                );
                 
                 if (monthIndex !== -1) {
                     user.contributions.projects[monthIndex].count = Math.max(0, user.contributions.projects[monthIndex].count - 1);
@@ -584,11 +428,9 @@ app.delete('/api/items/:id', isAuthenticated, checkMongoDBConnection, async (req
                 const weekStart = new Date(now);
                 weekStart.setDate(now.getDate() - now.getDay());
                 // Find the current week's idea count
-                const weekIndex = user.contributions.ideas.findIndex(i => {
-                    if (!i || !i.date) return false;
-                    const ideaDate = new Date(i.date);
-                    return ideaDate.getTime() === weekStart.getTime();
-                });
+                const weekIndex = user.contributions.ideas.findIndex(i => 
+                    i.date.getTime() === weekStart.getTime()
+                );
                 
                 if (weekIndex !== -1) {
                     user.contributions.ideas[weekIndex].count = Math.max(0, user.contributions.ideas[weekIndex].count - 1);
@@ -597,27 +439,86 @@ app.delete('/api/items/:id', isAuthenticated, checkMongoDBConnection, async (req
                     }
                 }
             }
-            
-            try {
-                await user.save();
-                console.log('User contributions updated successfully');
-            } catch (saveError) {
-                console.error('Error saving user contributions:', saveError);
-                // Continue with deletion even if contribution update fails
-            }
+            await user.save();
         }
         
         await item.deleteOne();
-        console.log('Item deleted successfully');
-        console.log('=== End Item Deletion ===\n');
+        console.log(`Item ${req.params.id} deleted by ${req.user.email}`);
         res.status(200).json({ message: 'Item deleted successfully' });
     } catch (err) {
         console.error('Error deleting item:', err);
-        console.error('Error stack:', err.stack);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Delete all items (admin only)
+app.delete('/api/items/delete-all', isAdmin, async (req, res) => {
+    console.log('Delete all items request received from:', req.user.email);
+    
+    // Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+        console.error('MongoDB is not connected');
+        return res.status(503).json({ error: 'Database connection error' });
+    }
+
+    try {
+        // Get all items before deleting to update user stats
+        const items = await Item.find({});
+        console.log(`Found ${items.length} items to delete`);
+        
+        // Reset all users' contribution counts
+        console.log('Resetting user contribution counts');
+        try {
+            const updateResult = await User.updateMany({}, {
+                $set: {
+                    'contributions.projects': [],
+                    'contributions.ideas': []
+                }
+            });
+            console.log('User contributions reset result:', updateResult);
+        } catch (updateError) {
+            console.error('Error resetting user contributions:', {
+                message: updateError.message,
+                stack: updateError.stack,
+                code: updateError.code
+            });
+            throw updateError;
+        }
+        
+        // Delete all items
+        console.log('Deleting all items');
+        try {
+            const deleteResult = await Item.deleteMany({});
+            console.log('Items deletion result:', deleteResult);
+            
+            if (!deleteResult.acknowledged) {
+                throw new Error('Delete operation was not acknowledged by MongoDB');
+            }
+        } catch (deleteError) {
+            console.error('Error deleting items:', {
+                message: deleteError.message,
+                stack: deleteError.stack,
+                code: deleteError.code
+            });
+            throw deleteError;
+        }
+        
+        console.log('All items deleted successfully by admin:', req.user.email);
+        res.status(200).json({ message: 'All items deleted successfully' });
+    } catch (err) {
+        console.error('Error in delete-all endpoint:', {
+            message: err.message,
+            stack: err.stack,
+            timestamp: new Date().toISOString(),
+            user: req.user.email,
+            errorType: err.name,
+            errorCode: err.code,
+            mongoState: mongoose.connection.readyState
+        });
         res.status(500).json({ 
             error: 'Server error',
             details: err.message,
-            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+            code: err.code
         });
     }
 });
