@@ -220,7 +220,7 @@ function fetchUserStats() {
         });
 }
 
-// Submit a new item (project or idea)
+// Submit a new item
 function submitItem() {
     const form = document.getElementById('submission-form');
     const formData = new FormData(form);
@@ -234,30 +234,33 @@ function submitItem() {
         title = formData.get('description');
     }
     
-    console.log('Submitting item:', { type, title });
+    const url = formData.get('url');
+    const keywords = formData.get('keywords').split(',').map(k => k.trim()).filter(k => k);
+    
+    console.log('\n=== Starting Item Submission ===');
+    console.log('Form data:', {
+        type,
+        title,
+        url,
+        keywords
+    });
     
     // Validate required fields
-    if (!title || !type) {
+    if (!type || !title || keywords.length === 0) {
+        console.error('Validation failed:', {
+            type: !!type,
+            title: !!title,
+            keywords: keywords.length
+        });
         alert('Please fill in all required fields');
-        return;
-    }
-
-    // Clean up keywords
-    const keywords = formData.get('keywords')
-        .split(',')
-        .map(keyword => keyword.trim())
-        .filter(keyword => keyword.length > 0);
-
-    if (keywords.length === 0) {
-        alert('Please add at least one keyword');
         return;
     }
     
     const itemData = {
-        type: type,
-        title: title,
-        url: formData.get('url') || '',
-        keywords: keywords
+        type,
+        title,
+        url: url || '',
+        keywords
     };
     
     console.log('Sending item data:', itemData);
@@ -267,20 +270,29 @@ function submitItem() {
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(itemData)
+        body: JSON.stringify(itemData),
+        credentials: 'include'
     })
     .then(response => {
         console.log('Response status:', response.status);
+        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+        
         if (!response.ok) {
             return response.json().then(err => {
                 console.error('Server error:', err);
-                throw new Error(err.error || 'Failed to create item');
+                console.error('Error details:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: err
+                });
+                throw new Error(err.details || err.error || 'Failed to create item');
             });
         }
         return response.json();
     })
     .then(data => {
         console.log('Item created successfully:', data);
+        // Reset the form
         form.reset();
         // Reset the form display
         const titleGroup = document.getElementById('title-group');
@@ -296,7 +308,15 @@ function submitItem() {
     })
     .catch(error => {
         console.error('Error submitting item:', error);
+        console.error('Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
         alert(error.message || 'An error occurred. Please try again.');
+    })
+    .finally(() => {
+        console.log('=== End Item Submission ===\n');
     });
 }
 
@@ -445,50 +465,91 @@ function upvoteItem(itemId, card) {
     .catch(error => console.error('Error upvoting item:', error));
 }
 
-// Delete all items
-function deleteAllItems() {
-    fetch('/api/items/delete-all', {
-        method: 'DELETE'
-    })
-    .then(response => {
-        if (response.ok) {
-            fetchItems(); // Refresh the list (should be empty now)
-            // Add a small delay before refreshing user stats to ensure server has processed the deletion
-            setTimeout(() => {
-                fetchUserStats();
-            }, 500);
-            alert('All posts have been deleted successfully.');
-        } else {
-            return response.json().then(err => {
-                throw new Error(err.error || 'Failed to delete all posts');
-            });
-        }
-    })
-    .catch(error => {
-        console.error('Error deleting all items:', error);
-        alert(error.message || 'An error occurred. Please try again.');
-    });
-}
-
 // Delete an item
 function deleteItem(itemId, wrapper) {
+    console.log('Attempting to delete item:', itemId);
     fetch(`/api/items/${itemId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include' // Important for session-based auth
     })
     .then(response => {
-        if (response.ok) {
-            // Remove the card from the UI
-            wrapper.remove();
-            // Refresh user stats
-            fetchUserStats();
-        } else {
+        console.log('Delete response status:', response.status);
+        if (!response.ok) {
             return response.json().then(err => {
-                throw new Error(err.error || 'Failed to delete item');
+                console.error('Delete error response:', err);
+                throw new Error(err.details || err.error || 'Failed to delete item');
             });
         }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Item deleted successfully:', data);
+        // Remove the card from the UI
+        wrapper.remove();
+        // Refresh user stats
+        fetchUserStats();
+        // Show success message
+        alert('Item deleted successfully');
     })
     .catch(error => {
         console.error('Error deleting item:', error);
-        alert(error.message || 'Failed to delete item. Please try again.');
+        console.error('Error details:', error.message);
+        alert(`Failed to delete item: ${error.message}`);
+    });
+}
+
+// Delete all items
+function deleteAllItems() {
+    if (!confirm('Are you sure you want to delete ALL items? This action cannot be undone.')) {
+        return;
+    }
+    
+    console.log('\n=== Starting Delete All Items ===');
+    console.log('User attempting to delete all items');
+    
+    fetch('/api/items/delete-all', {
+        method: 'DELETE',
+        credentials: 'include' // Important for session-based auth
+    })
+    .then(response => {
+        console.log('Delete all response status:', response.status);
+        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+        
+        if (!response.ok) {
+            return response.json().then(err => {
+                console.error('Delete all error response:', err);
+                console.error('Error details:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: err
+                });
+                throw new Error(err.details || err.error || 'Failed to delete all items');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('All items deleted successfully:', data);
+        // Clear the items container
+        const container = document.getElementById('items-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+        // Refresh user stats
+        fetchUserStats();
+        // Show success message
+        alert('All items have been deleted successfully');
+    })
+    .catch(error => {
+        console.error('Error deleting all items:', error);
+        console.error('Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        alert(`Failed to delete all items: ${error.message}`);
+    })
+    .finally(() => {
+        console.log('=== End Delete All Items ===\n');
     });
 }
