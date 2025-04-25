@@ -1,0 +1,78 @@
+.leaderboard-container {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 1rem;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.leaderboard-tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 0.5rem;
+}
+
+.leaderboard-tab {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.leaderboard-tab:hover {
+    background: #f5f5f5;
+}
+
+.leaderboard-tab.active {
+    background: #007bff;
+    color: white;
+}
+
+.leaderboard-content {
+    min-height: 200px;
+}
+
+.leaderboard-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.leaderboard-item:last-child {
+    border-bottom: none;
+}
+
+.leaderboard-rank {
+    width: 40px;
+    font-weight: bold;
+    color: #666;
+}
+
+.leaderboard-user {
+    flex: 1;
+}
+
+.user-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.user-email {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.leaderboard-score {
+    font-weight: bold;
+    color: #007bff;
+}
+
+.error {
+    color: #dc3545;
+    text-align: center;
+    padding: 1rem;
+} 

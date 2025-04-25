@@ -1,3 +1,6 @@
+// Add currentUser variable at the top of the file
+let currentUser = null;
+
 document.addEventListener('DOMContentLoaded', function() {
     // Check login status when page loads
     fetchUserStatus();
@@ -82,6 +85,41 @@ document.addEventListener('DOMContentLoaded', function() {
             submissionOverlay.classList.add('hidden');
         }
     });
+
+    // Handle comments overlay
+    const commentsOverlay = document.getElementById('comments-overlay');
+    const closeCommentsBtn = document.getElementById('close-comments');
+    const commentText = document.getElementById('comment-text');
+    const submitCommentBtn = document.getElementById('submit-comment');
+    let currentItemId = null;
+
+    closeCommentsBtn.addEventListener('click', function() {
+        commentsOverlay.classList.add('hidden');
+        commentText.value = '';
+        currentItemId = null;
+    });
+
+    commentsOverlay.addEventListener('click', function(e) {
+        if (e.target === commentsOverlay) {
+            commentsOverlay.classList.add('hidden');
+            commentText.value = '';
+            currentItemId = null;
+        }
+    });
+
+    // Handle voters overlay
+    const votersOverlay = document.getElementById('voters-overlay');
+    const closeVotersBtn = document.getElementById('close-voters');
+
+    closeVotersBtn.addEventListener('click', function() {
+        votersOverlay.classList.add('hidden');
+    });
+
+    votersOverlay.addEventListener('click', function(e) {
+        if (e.target === votersOverlay) {
+            votersOverlay.classList.add('hidden');
+        }
+    });
 });
 
 // Fetch user login status
@@ -90,6 +128,9 @@ function fetchUserStatus() {
         .then(response => response.json())
         .then(data => {
             if (data.authenticated) {
+                // Set currentUser
+                currentUser = data.user;
+                
                 // User is logged in
                 document.getElementById('login-btn').classList.add('hidden');
                 document.getElementById('user-info').classList.remove('hidden');
@@ -109,6 +150,7 @@ function fetchUserStatus() {
                 fetchItems();
                 fetchUserStats();
             } else {
+                currentUser = null;
                 // User is not logged in
                 document.getElementById('login-btn').classList.remove('hidden');
                 document.getElementById('user-info').classList.add('hidden');
@@ -121,92 +163,32 @@ function fetchUserStatus() {
 
 // Fetch user stats
 function fetchUserStats() {
-    console.log('\n=== Starting User Stats Fetch ===');
-    console.log('Fetching user stats from server...');
-    
     fetch('/api/user/stats')
-        .then(response => {
-            console.log('Stats response status:', response.status);
-            if (!response.ok) {
-                return response.json().then(err => {
-                    console.error('Stats error response:', err);
-                    throw new Error(err.error || 'Failed to fetch user stats');
-                });
-            }
-            return response.json();
-        })
+        .then(response => response.json())
         .then(data => {
-            console.log('\nReceived raw stats data:', data);
-            if (!data) {
-                throw new Error('No data received from server');
+            const ideasCountElement = document.getElementById('ideas-count');
+            const projectsCountElement = document.getElementById('projects-count');
+            
+            if (ideasCountElement) {
+                ideasCountElement.textContent = data.weekIdeas || 0;
             }
             
-            // Update the UI with the stats
-            const monthProjectsElement = document.getElementById('month-projects');
-            const weekIdeasElement = document.getElementById('week-ideas');
-            const streakPointsElement = document.getElementById('streak-points');
-            
-            if (monthProjectsElement) {
-                // Parse the value as a number and ensure it's not undefined or null
-                const monthProjects = parseInt(data.currentMonthProjects) || 0;
-                console.log('\nProcessing month projects:');
-                console.log('Raw value:', data.currentMonthProjects);
-                console.log('Parsed value:', monthProjects);
-                console.log('Setting element text to:', monthProjects);
-                monthProjectsElement.textContent = monthProjects;
-                monthProjectsElement.style.display = 'block';
+            if (projectsCountElement) {
+                projectsCountElement.textContent = data.monthProjects || 0;
             }
-            
-            if (weekIdeasElement) {
-                // Parse the value as a number and ensure it's not undefined or null
-                const weekIdeas = parseInt(data.currentWeekIdeas) || 0;
-                console.log('\nProcessing week ideas:');
-                console.log('Raw value:', data.currentWeekIdeas);
-                console.log('Parsed value:', weekIdeas);
-                console.log('Setting element text to:', weekIdeas);
-                weekIdeasElement.textContent = weekIdeas;
-                weekIdeasElement.style.display = 'block';
-            }
-            
-            if (streakPointsElement) {
-                // Parse the value as a number and ensure it's not undefined or null
-                const streakPoints = parseInt(data.streakPoints) || 0;
-                console.log('\nProcessing streak points:');
-                console.log('Raw value:', data.streakPoints);
-                console.log('Parsed value:', streakPoints);
-                console.log('Setting element text to:', streakPoints);
-                streakPointsElement.textContent = streakPoints;
-                streakPointsElement.style.display = 'block';
-            }
-            
-            console.log('\n=== End User Stats Fetch ===\n');
         })
         .catch(error => {
-            console.error('\nError fetching user stats:', error);
-            // Set all values to 0 in case of error
-            const monthProjectsElement = document.getElementById('month-projects');
-            const weekIdeasElement = document.getElementById('week-ideas');
-            const streakPointsElement = document.getElementById('streak-points');
+            console.error('Error fetching user stats:', error);
+            const ideasCountElement = document.getElementById('ideas-count');
+            const projectsCountElement = document.getElementById('projects-count');
             
-            if (monthProjectsElement) {
-                console.log('Setting month projects to 0 due to error');
-                monthProjectsElement.textContent = '0';
-                monthProjectsElement.style.display = 'block';
+            if (ideasCountElement) {
+                ideasCountElement.textContent = '0';
             }
             
-            if (weekIdeasElement) {
-                console.log('Setting week ideas to 0 due to error');
-                weekIdeasElement.textContent = '0';
-                weekIdeasElement.style.display = 'block';
+            if (projectsCountElement) {
+                projectsCountElement.textContent = '0';
             }
-            
-            if (streakPointsElement) {
-                console.log('Setting streak points to 0 due to error');
-                streakPointsElement.textContent = '0';
-                streakPointsElement.style.display = 'block';
-            }
-            
-            console.log('\n=== End User Stats Fetch (Error Case) ===\n');
         });
 }
 
@@ -346,7 +328,33 @@ function displayItems(items) {
         card.querySelector('.upvote-count').textContent = item.upvotes;
         
         // Add upvote functionality
-        card.querySelector('.upvote-btn').addEventListener('click', function() {
+        const upvoteBtn = card.querySelector('.upvote-btn');
+        
+        // Check if user has already upvoted or is the author
+        fetch('/api/user')
+            .then(response => response.json())
+            .then(data => {
+                if (data.authenticated) {
+                    const isAuthor = item.createdBy && item.createdBy._id === data.user._id;
+                    const hasUpvoted = item.upvoters && item.upvoters.some(upvote => 
+                        upvote.user.toString() === data.user._id.toString()
+                    );
+                    
+                    if (isAuthor || hasUpvoted) {
+                        upvoteBtn.disabled = true;
+                        upvoteBtn.style.opacity = '0.5';
+                        upvoteBtn.style.cursor = 'not-allowed';
+                        
+                        if (isAuthor) {
+                            upvoteBtn.title = "You cannot upvote your own post";
+                        } else if (hasUpvoted) {
+                            upvoteBtn.title = "You have already upvoted this post";
+                        }
+                    }
+                }
+            });
+        
+        upvoteBtn.addEventListener('click', function() {
             upvoteItem(item._id, card);
         });
         
@@ -360,6 +368,25 @@ function displayItems(items) {
             keywordsContainer.appendChild(keywordSpan);
         });
         
+        // Handle comment link
+        const commentLink = wrapper.querySelector('.comment-link');
+        if (item.comments && item.comments.length > 0) {
+            commentLink.textContent = 'Comment/View Comments';
+        } else {
+            commentLink.textContent = 'Comment';
+        }
+        commentLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            showComments(item._id);
+        });
+        
+        // Handle voters link
+        const votersLink = wrapper.querySelector('.voters-link');
+        votersLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            showVoters(item._id);
+        });
+        
         // Add delete link for admin or item owner
         const deleteLink = wrapper.querySelector('.delete-link');
         deleteLink.style.display = 'none'; // Hidden by default
@@ -368,26 +395,17 @@ function displayItems(items) {
         fetch('/api/user')
             .then(response => response.json())
             .then(data => {
-                console.log('Checking delete permissions:', {
-                    isAuthenticated: data.authenticated,
-                    userEmail: data.user?.email,
-                    isAdmin: data.user?.email === 'prayas.abhinav@anu.edu.in',
-                    itemCreatorId: item.createdBy?._id,
-                    currentUserId: data.user?._id
-                });
-                
                 if (data.authenticated) {
                     // Show delete button for admin or item owner
                     if (data.user.email === 'prayas.abhinav@anu.edu.in' || 
                         (item.createdBy && item.createdBy._id === data.user._id)) {
-                        console.log('Showing delete button for item:', item._id);
                         deleteLink.style.display = 'block';
                         // Add admin indicator if user is admin
                         if (data.user.email === 'prayas.abhinav@anu.edu.in') {
                             deleteLink.textContent = 'Delete (Admin)';
+                        } else {
+                            deleteLink.textContent = 'Delete';
                         }
-                    } else {
-                        console.log('Hiding delete button for item:', item._id);
                     }
                 }
             });
@@ -427,17 +445,39 @@ function filterItems(filterType) {
 // Upvote an item
 function upvoteItem(itemId, card) {
     fetch(`/api/items/${itemId}/upvote`, {
-        method: 'POST'
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Failed to upvote item');
+            });
+        }
+        return response.json();
+    })
     .then(data => {
-        // Update the upvote count in the UI
-        const countElement = card.querySelector('.upvote-count');
-        countElement.textContent = data.upvotes;
+        // Update the upvote count
+        const upvoteCount = card.querySelector('.upvote-count');
+        upvoteCount.textContent = data.upvotes;
         
-        // No need to fetch all items again since we're just updating the count
+        // Disable the upvote button
+        const upvoteBtn = card.querySelector('.upvote-btn');
+        upvoteBtn.disabled = true;
+        upvoteBtn.style.opacity = '0.5';
+        upvoteBtn.style.cursor = 'not-allowed';
+        
+        // Show success message
+        alert('Item upvoted successfully!');
     })
-    .catch(error => console.error('Error upvoting item:', error));
+    .catch(err => {
+        console.error('Error upvoting item:', err);
+        alert(err.message || 'Failed to upvote item. Please try again.');
+    });
 }
 
 // Delete an item
@@ -462,3 +502,173 @@ function deleteItem(itemId, wrapper) {
         alert(error.message || 'Failed to delete item. Please try again.');
     });
 }
+
+// Show voters for an item
+function showVoters(itemId) {
+    const votersOverlay = document.getElementById('voters-overlay');
+    const votersContainer = document.getElementById('voters-container');
+    
+    // Clear previous voters
+    votersContainer.innerHTML = '';
+    
+    // Show loading state
+    votersContainer.innerHTML = '<p>Loading voters...</p>';
+    votersOverlay.classList.remove('hidden');
+    
+    // Fetch voters
+    fetch(`/api/items/${itemId}/upvoters`, {
+        credentials: 'include',
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to fetch voters');
+        }
+        return response.json();
+    })
+    .then(voters => {
+        votersContainer.innerHTML = '';
+        
+        if (!voters || voters.length === 0) {
+            votersContainer.innerHTML = '<p>No voters yet.</p>';
+            return;
+        }
+        
+        // Sort voters by date (most recent first)
+        voters.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        voters.forEach(voter => {
+            const voterElement = document.createElement('div');
+            voterElement.className = 'voter';
+            voterElement.innerHTML = `
+                <span class="voter-name">${voter.name}</span>
+                <span class="voter-date">${new Date(voter.date).toLocaleString()}</span>
+            `;
+            votersContainer.appendChild(voterElement);
+        });
+    })
+    .catch(err => {
+        console.error('Error fetching voters:', err);
+        votersContainer.innerHTML = '<p>Error loading voters. Please try again.</p>';
+    });
+}
+
+// Show comments for an item
+function showComments(itemId) {
+    currentItemId = itemId;
+    const commentsOverlay = document.getElementById('comments-overlay');
+    const commentsContainer = document.getElementById('comments-container');
+    const commentForm = document.getElementById('comment-form');
+    
+    // Clear previous comments
+    commentsContainer.innerHTML = '';
+    
+    // Show loading state
+    commentsContainer.innerHTML = '<p>Loading comments...</p>';
+    commentsOverlay.classList.remove('hidden');
+    
+    // Fetch comments
+    fetch(`/api/items/${itemId}/comments`, {
+        credentials: 'include',
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to fetch comments');
+        }
+        return response.json();
+    })
+    .then(comments => {
+        commentsContainer.innerHTML = '';
+        
+        if (!comments || comments.length === 0) {
+            commentsContainer.innerHTML = '<p>No comments yet.</p>';
+            return;
+        }
+        
+        comments.forEach(comment => {
+            const commentElement = document.createElement('div');
+            commentElement.className = 'comment';
+            
+            const isAuthor = comment.author._id === currentUser._id;
+            
+            commentElement.innerHTML = `
+                <div class="comment-header">
+                    <span class="comment-author">${comment.author.name}</span>
+                    <span class="comment-date">${new Date(comment.date).toLocaleString()}</span>
+                    ${isAuthor ? `<button class="delete-comment" data-comment-id="${comment._id}">Delete</button>` : ''}
+                </div>
+                <div class="comment-text">${comment.text}</div>
+            `;
+            
+            commentsContainer.appendChild(commentElement);
+        });
+        
+        // Add event listeners for delete buttons
+        document.querySelectorAll('.delete-comment').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const commentId = e.target.dataset.commentId;
+                try {
+                    const response = await fetch(`/api/items/${itemId}/comments/${commentId}`, {
+                        method: 'DELETE',
+                        credentials: 'include'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to delete comment');
+                    }
+                    
+                    // Refresh comments
+                    showComments(itemId);
+                } catch (err) {
+                    console.error('Error deleting comment:', err);
+                    alert('Failed to delete comment');
+                }
+            });
+        });
+    })
+    .catch(err => {
+        console.error('Error fetching comments:', err);
+        commentsContainer.innerHTML = '<p>Error loading comments. Please try again.</p>';
+    });
+}
+
+// Handle comment submission
+document.getElementById('submit-comment').addEventListener('click', function() {
+    const commentText = document.getElementById('comment-text');
+    const text = commentText.value.trim();
+    
+    if (!text) {
+        alert('Please enter a comment');
+        return;
+    }
+    
+    if (!currentItemId) {
+        alert('Error: No item selected');
+        return;
+    }
+    
+    fetch(`/api/items/${currentItemId}/comments`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text })
+    })
+    .then(response => {
+        if (response.ok) {
+            commentText.value = '';
+            showComments(currentItemId);
+        } else {
+            throw new Error('Failed to post comment');
+        }
+    })
+    .catch(error => {
+        console.error('Error posting comment:', error);
+        alert('Failed to post comment. Please try again.');
+    });
+});

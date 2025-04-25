@@ -156,13 +156,15 @@ textarea {
 }
 
 .item-card {
-    border-radius: 8px 8px 0 0;
-    padding: 1.5rem;
-    box-shadow: none;
-    position: relative;
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     display: flex;
     flex-direction: column;
-    min-height: 200px;
+    gap: 15px;
+    position: relative;
 }
 
 .item-card[data-type="project"] {
@@ -188,19 +190,26 @@ textarea {
 }
 
 .item-keywords {
+    position: absolute;
+    top: 20px;
+    right: 20px;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem;
+    gap: 5px;
     justify-content: flex-end;
+    max-width: 100px;
 }
 
 .keyword {
     background-color: #f0f0f0;
-    color: var(--secondary-color);
-    padding: 0.15rem 0.4rem;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    border: 1px solid var(--secondary-color);
+    color: #666;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 .item-url {
@@ -210,46 +219,63 @@ textarea {
 .item-url a {
     color: var(--primary-color);
     text-decoration: none;
+    font-size: 11px;
 }
 
 .item-url a:hover {
     text-decoration: underline;
 }
 
+.item-content {
+    flex: 1;
+    padding-right: 100px; /* Make space for keywords */
+}
+
 .item-actions {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
-    margin-bottom: 1rem;
+    gap: 10px;
+    margin-top: 10px;
 }
 
-.item-author {
-    font-size: 9px;
-    color: #666;
-    font-style: italic;
-    margin-top: auto;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-color);
-    text-align: right;
-}
-
-.votes-display {
-    font-size: 0.9rem;
-    color: #666;
+.upvote-section {
+    display: flex;
+    justify-content: center;
+    width: 100%;
 }
 
 .upvote-btn {
-    background-color: var(--primary-color);
+    background-color: #4CAF50;
     color: white;
     border: none;
-    padding: 0.4rem 0.75rem;
+    padding: 8px 16px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 14px;
+    transition: background-color 0.3s;
 }
 
 .upvote-btn:hover {
-    opacity: 0.9;
+    background-color: #45a049;
+}
+
+.item-links {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    width: 100%;
+}
+
+.item-links a {
+    color: #666;
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 0.3s;
+}
+
+.item-links a:hover {
+    color: #333;
 }
 
 /* Admin controls */
@@ -373,19 +399,196 @@ footer {
     }
 }
 
-.delete-link {
-    display: block;
-    color: #999;
-    text-decoration: none;
-    font-size: 9px;
-    text-align: left;
-    transition: color 0.2s ease;
-    padding: 8px 16px;
-    background-color: white;
-    border-top: 1px solid var(--border-color);
+/* Comments overlay styles */
+.comments-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background-color: var(--light-bg);
+    border-radius: 4px;
 }
 
-.delete-link:hover {
-    color: #ff4444;
+.comment {
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    background-color: white;
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.comment-author {
+    font-weight: 500;
+    color: var(--primary-color);
+}
+
+.comment-date {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.delete-comment {
+    background-color: var(--danger-color);
+    color: white;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.delete-comment:hover {
+    background-color: #d32f2f;
+}
+
+.comment-text {
+    margin-bottom: 0.5rem;
+    white-space: pre-wrap;
+}
+
+.comment-form {
+    padding: 1rem;
+    background-color: white;
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+}
+
+#comment-text {
+    width: 100%;
+    min-height: 100px;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    resize: vertical;
+}
+
+/* Remove upvoters overlay styles since we're removing the feature */
+.upvoters-overlay {
+    display: none;
+}
+
+.item-author {
+    font-size: 11px;
+    color: #666;
+    text-align: le
+}
+
+.voters-container {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.voter {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background-color: white;
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+}
+
+.voter-name {
+    font-weight: 500;
+    color: var(--primary-color);
+}
+
+.voter-date {
+    font-size: 0.8rem;
+    color: #666;
+    margin-left: 0.5rem;
+}
+
+.leaderboard-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.leaderboard-link:hover {
+    color: var(--secondary-color);
     text-decoration: underline;
+}
+
+.leaderboard-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.leaderboard-tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.leaderboard-tab {
+    background: none;
+    border: none;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    color: var(--text-color);
+    font-size: 1rem;
+    transition: all 0.3s;
+}
+
+.leaderboard-tab.active {
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+}
+
+.leaderboard-content {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.leaderboard-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    background-color: white;
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+}
+
+.leaderboard-rank {
+    font-weight: bold;
+    color: var(--primary-color);
+    min-width: 30px;
+}
+
+.leaderboard-user {
+    flex: 1;
+    margin: 0 1rem;
+}
+
+.leaderboard-score {
+    font-weight: 500;
+    color: var(--secondary-color);
+    min-width: 60px;
+    text-align: right;
+}
+
+.leaderboard-item:nth-child(1) .leaderboard-rank {
+    color: gold;
+}
+
+.leaderboard-item:nth-child(2) .leaderboard-rank {
+    color: silver;
+}
+
+.leaderboard-item:nth-child(3) .leaderboard-rank {
+    color: #cd7f32; /* bronze */
 }

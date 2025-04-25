@@ -90,7 +90,22 @@ const Item = mongoose.model('Item', new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
-    }
+    },
+    upvoters: [{
+        user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        date: Date
+    }],
+    comments: [{
+        text: String,
+        author: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        date: Date
+    }]
 }));
 
 // Configure session middleware
@@ -111,12 +126,14 @@ console.log('Configuring Passport.js...');
 app.use(passport.initialize());
 app.use(passport.session());
 
+const callbackURL = process.env.NODE_ENV === 'production'
+    ? 'https://showcase.myplaceholder.in/auth/google/callback'
+    : 'http://localhost:3000/auth/google/callback';
+
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: process.env.NODE_ENV === 'production' 
-        ? 'https://showcase.myplaceholder.in/auth/google/callback'
-        : 'http://localhost:3000/auth/google/callback'
+    callbackURL: callbackURL
 },
 async (accessToken, refreshToken, profile, done) => {
     try {
@@ -233,6 +250,7 @@ app.get('/api/items', isAuthenticated, async (req, res) => {
     try {
         const items = await Item.find()
             .populate('createdBy', 'name')  // Populate only the name field
+            .populate('upvoters.user', 'name')  // Populate upvoters' names
             .sort({ upvotes: -1 });
         res.json(items);
     } catch (err) {
@@ -240,32 +258,6 @@ app.get('/api/items', isAuthenticated, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
-// Helper function to check and update streaks
-async function checkAndUpdateStreaks(userId) {
-    const user = await User.findById(userId);
-    if (!user) return;
-
-    const now = new Date();
-    const oneMonthAgo = new Date(now.setMonth(now.getMonth() - 1));
-    const oneWeekAgo = new Date(now.setDate(now.getDate() - 7));
-
-    // Check project contributions
-    const recentProjects = user.contributions.projects.filter(p => p.date >= oneMonthAgo);
-    const projectStreak = recentProjects.length >= 3 && 
-        recentProjects.every(p => p.count >= 1);
-
-    // Check idea contributions
-    const recentIdeas = user.contributions.ideas.filter(i => i.date >= oneWeekAgo);
-    const ideaStreak = recentIdeas.length >= 3 && 
-        recentIdeas.every(i => i.count >= 1);
-
-    // Update streak points if both conditions are met
-    if (projectStreak && ideaStreak) {
-        user.streakPoints += 1;
-        await user.save();
-    }
-}
 
 // Update the POST /api/items endpoint
 app.post('/api/items', isAuthenticated, async (req, res) => {
@@ -310,16 +302,17 @@ app.post('/api/items', isAuthenticated, async (req, res) => {
         const now = new Date();
         const user = await User.findById(req.user._id);
         console.log('Found user:', user._id);
-        
+
         if (type === 'project') {
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-            const existingMonth = user.contributions.projects.find(p => 
+            // Find the current month's project count
+            const monthIndex = user.contributions.projects.findIndex(p => 
                 p.date.getMonth() === monthStart.getMonth() && 
                 p.date.getFullYear() === monthStart.getFullYear()
             );
             
-            if (existingMonth) {
-                existingMonth.count += 1;
+            if (monthIndex !== -1) {
+                user.contributions.projects[monthIndex].count += 1;
             } else {
                 user.contributions.projects.push({
                     date: monthStart,
@@ -329,14 +322,13 @@ app.post('/api/items', isAuthenticated, async (req, res) => {
         } else {
             const weekStart = new Date(now);
             weekStart.setDate(now.getDate() - now.getDay());
-            console.log('Week start:', weekStart);
-            
-            const existingWeek = user.contributions.ideas.find(i => 
+            // Find the current week's idea count
+            const weekIndex = user.contributions.ideas.findIndex(i => 
                 i.date.getTime() === weekStart.getTime()
             );
             
-            if (existingWeek) {
-                existingWeek.count += 1;
+            if (weekIndex !== -1) {
+                user.contributions.ideas[weekIndex].count += 1;
             } else {
                 user.contributions.ideas.push({
                     date: weekStart,
@@ -345,26 +337,13 @@ app.post('/api/items', isAuthenticated, async (req, res) => {
             }
         }
         
-        console.log('Updating user contributions');
         await user.save();
         console.log('User contributions updated');
-        
-        // Check and update streaks
-        await checkAndUpdateStreaks(req.user._id);
-        
-        // Return the new item with populated creator
-        const populatedItem = await Item.findById(newItem._id)
-            .populate('createdBy', 'name');
-            
-        console.log('Sending response with populated item');
-        res.status(201).json(populatedItem);
+
+        res.status(201).json(newItem);
     } catch (err) {
         console.error('Error creating item:', err);
-        console.error('Error stack:', err.stack);
-        res.status(500).json({ 
-            error: 'Failed to create item. Please try again.',
-            details: err.message
-        });
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
@@ -377,10 +356,40 @@ app.post('/api/items/:id/upvote', isAuthenticated, async (req, res) => {
             return res.status(404).json({ error: 'Item not found' });
         }
         
+        // Check if user is trying to upvote their own post
+        if (item.createdBy.toString() === req.user._id.toString()) {
+            return res.status(400).json({ error: 'You cannot upvote your own post' });
+        }
+        
+        // Check if user has already upvoted
+        const existingUpvote = item.upvoters.find(upvote => 
+            upvote.user.toString() === req.user._id.toString()
+        );
+        
+        if (existingUpvote) {
+            return res.status(400).json({ error: 'You have already upvoted this item' });
+        }
+        
+        // Add new upvote
         item.upvotes += 1;
+        item.upvoters.push({
+            user: req.user._id,
+            date: new Date()
+        });
+        
         await item.save();
         
-        res.json({ upvotes: item.upvotes });
+        // Populate the upvoters before sending response
+        const populatedItem = await Item.findById(item._id)
+            .populate('upvoters.user', 'name');
+        
+        res.json({ 
+            upvotes: populatedItem.upvotes,
+            upvoters: populatedItem.upvoters.map(upvote => ({
+                name: upvote.user.name,
+                date: upvote.date
+            }))
+        });
     } catch (err) {
         console.error('Error upvoting item:', err);
         res.status(500).json({ error: 'Server error' });
@@ -523,132 +532,257 @@ app.delete('/api/items/delete-all', isAdmin, async (req, res) => {
     }
 });
 
-// Add new endpoint to get user's contribution stats
+// Get user stats
 app.get('/api/user/stats', isAuthenticated, async (req, res) => {
     try {
-        // Check MongoDB connection
-        if (mongoose.connection.readyState !== 1) {
-            console.error('MongoDB is not connected');
-            return res.status(503).json({ error: 'Database connection error' });
-        }
-
-        console.log('\n=== Starting User Stats Calculation ===');
-        console.log('Fetching stats for user:', req.user._id);
-        
-        // Ensure user._id is valid
-        if (!mongoose.Types.ObjectId.isValid(req.user._id)) {
-            console.error('Invalid user ID:', req.user._id);
-            return res.status(400).json({ error: 'Invalid user ID' });
-        }
-
         const user = await User.findById(req.user._id);
-        
         if (!user) {
-            console.error('User not found:', req.user._id);
             return res.status(404).json({ error: 'User not found' });
         }
+
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay());
+
+        const monthProjects = user.contributions.projects.find(p => 
+            p.date.getMonth() === monthStart.getMonth() && 
+            p.date.getFullYear() === monthStart.getFullYear()
+        )?.count || 0;
+
+        const weekIdeas = user.contributions.ideas.find(i => 
+            i.date.getTime() === weekStart.getTime()
+        )?.count || 0;
+
+        res.json({
+            monthProjects,
+            weekIdeas
+        });
+    } catch (err) {
+        console.error('Error getting user stats:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get upvoters for an item
+app.get('/api/items/:id/upvoters', isAuthenticated, async (req, res) => {
+    try {
+        const item = await Item.findById(req.params.id)
+            .populate('upvoters.user', 'name');
         
-        // Initialize contributions if they don't exist
-        if (!user.contributions) {
-            console.log('Initializing empty contributions for user');
-            user.contributions = {
-                projects: [],
-                ideas: []
-            };
-            await user.save();
+        if (!item) {
+            return res.status(404).json({ error: 'Item not found' });
         }
         
-        console.log('\nUser Details:');
-        console.log('ID:', user._id);
-        console.log('Name:', user.name);
-        console.log('Raw Contributions:', JSON.stringify(user.contributions, null, 2));
+        const upvoters = item.upvoters.map(upvote => ({
+            name: upvote.user.name,
+            date: upvote.date
+        }));
         
-        const now = new Date();
-        console.log('\nCurrent time:', now.toISOString());
+        res.json(upvoters);
+    } catch (err) {
+        console.error('Error fetching upvoters:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get comments for an item
+app.get('/api/items/:id/comments', isAuthenticated, async (req, res) => {
+    try {
+        const item = await Item.findById(req.params.id)
+            .populate('comments.author', 'name');
         
-        // Get current month's project count
-        const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        console.log('Current month start:', currentMonth.toISOString());
+        if (!item) {
+            return res.status(404).json({ error: 'Item not found' });
+        }
         
-        console.log('\nChecking Project Contributions:');
-        console.log('Total projects entries:', user.contributions.projects.length);
+        res.json(item.comments);
+    } catch (err) {
+        console.error('Error fetching comments:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Add a comment to an item
+app.post('/api/items/:id/comments', isAuthenticated, async (req, res) => {
+    try {
+        const { text } = req.body;
         
-        // Find the current month's project count
-        const monthProjects = user.contributions.projects.find(p => {
-            if (!p.date) {
-                console.log('Found project entry with no date:', p);
-                return false;
-            }
-            const projectDate = new Date(p.date);
-            console.log('Checking project entry:', {
-                date: projectDate.toISOString(),
-                count: p.count,
-                matchesCurrentMonth: projectDate.getMonth() === currentMonth.getMonth(),
-                matchesCurrentYear: projectDate.getFullYear() === currentMonth.getFullYear()
-            });
-            return projectDate.getMonth() === currentMonth.getMonth() && 
-                   projectDate.getFullYear() === currentMonth.getFullYear();
-        });
+        if (!text) {
+            return res.status(400).json({ error: 'Comment text is required' });
+        }
         
-        console.log('\nFound month projects:', monthProjects ? {
-            date: monthProjects.date.toISOString(),
-            count: monthProjects.count
-        } : 'None');
+        const item = await Item.findById(req.params.id);
         
-        // Get current week's idea count
-        const weekStart = new Date(now);
-        weekStart.setDate(now.getDate() - now.getDay()); // Start of current week
-        console.log('\nCurrent week start:', weekStart.toISOString());
+        if (!item) {
+            return res.status(404).json({ error: 'Item not found' });
+        }
         
-        // Find the current week's idea count
-        const weekIdeas = user.contributions.ideas.find(i => {
-            if (!i.date) {
-                console.log('Found idea entry with no date:', i);
-                return false;
-            }
-            const ideaDate = new Date(i.date);
-            console.log('Checking idea entry:', {
-                date: ideaDate.toISOString(),
-                count: i.count,
-                isInCurrentWeek: ideaDate >= weekStart && ideaDate < new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
-            });
-            return ideaDate >= weekStart && ideaDate < new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
-        });
-        
-        console.log('\nFound week ideas:', weekIdeas ? {
-            date: weekIdeas.date.toISOString(),
-            count: weekIdeas.count
-        } : 'None');
-        
-        // Verify the actual number of projects in the database
-        const actualProjectCount = await Item.countDocuments({
-            type: 'project',
-            createdBy: user._id,
-            createdAt: {
-                $gte: currentMonth,
-                $lt: new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)
-            }
-        });
-        
-        console.log('\nActual project count from database:', actualProjectCount);
-        
-        const stats = {
-            streakPoints: user.streakPoints || 0,
-            currentMonthProjects: actualProjectCount, // Use actual count from database
-            currentWeekIdeas: weekIdeas ? weekIdeas.count : 0
+        const comment = {
+            text,
+            author: req.user._id,
+            date: new Date()
         };
         
-        console.log('\nFinal Stats:', stats);
-        console.log('=== End User Stats Calculation ===\n');
+        item.comments.push(comment);
+        await item.save();
         
-        res.json(stats);
+        // Populate the author's name before sending the response
+        await item.populate('comments.author', 'name');
+        const newComment = item.comments[item.comments.length - 1];
+        
+        res.status(201).json(newComment);
     } catch (err) {
-        console.error('Error fetching user stats:', err);
-        console.error('Error stack:', err.stack);
-        res.status(500).json({ 
-            error: 'Failed to fetch user stats',
-            details: err.message
-        });
+        console.error('Error adding comment:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Delete a comment
+app.delete('/api/items/:itemId/comments/:commentId', isAuthenticated, async (req, res) => {
+    try {
+        const item = await Item.findById(req.params.itemId);
+        
+        if (!item) {
+            return res.status(404).json({ error: 'Item not found' });
+        }
+        
+        const commentIndex = item.comments.findIndex(comment => 
+            comment._id.toString() === req.params.commentId
+        );
+        
+        if (commentIndex === -1) {
+            return res.status(404).json({ error: 'Comment not found' });
+        }
+        
+        // Check if user is the author of the comment
+        if (item.comments[commentIndex].author.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ error: 'You can only delete your own comments' });
+        }
+        
+        // Remove the comment
+        item.comments.splice(commentIndex, 1);
+        await item.save();
+        
+        res.json({ message: 'Comment deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting comment:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Helper function to get start of week
+const getStartOfWeek = () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(now.getDate() - now.getDay());
+    return start;
+};
+
+// Helper function to get start of month
+const getStartOfMonth = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return start;
+};
+
+// Get leaderboard data
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const { type = 'posts' } = req.query;
+        const startOfWeek = getStartOfWeek();
+        const startOfMonth = getStartOfMonth();
+
+        let leaderboardData = [];
+
+        if (type === 'posts') {
+            // Get users with most posts this week
+            leaderboardData = await Item.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startOfWeek }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$createdBy',
+                        count: { $sum: 1 }
+                    }
+                },
+                {
+                    $sort: { count: -1 }
+                },
+                {
+                    $limit: 10
+                }
+            ]);
+        } else if (type === 'upvotes') {
+            // Get users with most upvotes this month
+            leaderboardData = await Item.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startOfMonth }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$createdBy',
+                        count: { $sum: '$upvotes' }
+                    }
+                },
+                {
+                    $sort: { count: -1 }
+                },
+                {
+                    $limit: 10
+                }
+            ]);
+        } else if (type === 'comments') {
+            // Get users with most comments this month
+            leaderboardData = await Item.aggregate([
+                {
+                    $match: {
+                        createdAt: { $gte: startOfMonth }
+                    }
+                },
+                {
+                    $unwind: '$comments'
+                },
+                {
+                    $group: {
+                        _id: '$comments.author',
+                        count: { $sum: 1 }
+                    }
+                },
+                {
+                    $sort: { count: -1 }
+                },
+                {
+                    $limit: 10
+                }
+            ]);
+        }
+
+        // Get user details for each entry
+        const userIds = leaderboardData.map(entry => entry._id);
+        const users = await User.find({ _id: { $in: userIds } });
+        const userMap = users.reduce((acc, user) => {
+            acc[user._id.toString()] = user;
+            return acc;
+        }, {});
+
+        // Combine user details with leaderboard data
+        const result = leaderboardData.map((entry, index) => ({
+            rank: index + 1,
+            user: userMap[entry._id.toString()] || { name: 'Unknown User', email: 'unknown@example.com' },
+            score: entry.count
+        }));
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        res.status(500).json({ error: 'Failed to fetch leaderboard data' });
     }
 });
 
